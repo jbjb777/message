@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>실시간 메시지 보드</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #050505;
+      color: white;
+      font-family: sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #background-echo {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    @keyframes floatUp {
+      0% { transform: translateY(var(--start-y)); opacity: 0; }
+      15% { opacity: var(--max-opacity); }
+      85% { opacity: var(--max-opacity); }
+      100% { transform: translateY(-20vh); opacity: 0; }
+    }
+
+    .echo-message {
+      position: absolute;
+      color: white;
+      white-space: nowrap;
+      animation: floatUp linear forwards;
+    }
+
+    .ui-layer {
+      position: absolute;
+      bottom: 40px; left: 50%;
+      transform: translateX(-50%);
+      width: 100%; max-width: 700px;
+      z-index: 10;
+      padding: 0 20px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    h1 { text-align: center; margin: 0 0 10px 0; font-size: 24px; opacity: 0.8; }
+
+    .write-box {
+      display: flex; gap: 10px;
+      background: rgba(20, 20, 20, 0.7);
+      padding: 10px; border-radius: 20px;
+      backdrop-filter: blur(5px);
+    }
+
+    .write-box input {
+      flex: 1; border: none; outline: none; background: transparent;
+      color: white; padding: 16px; font-size: 16px;
+    }
+
+    .write-box button {
+      border: none; background: white; color: black;
+      padding: 16px 24px; border-radius: 14px;
+      cursor: pointer; font-size: 16px; font-weight: bold;
+    }
+
+    .highlight-overlay {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      opacity: 0; font-size: 48px; font-weight: bold; color: white;
+      text-align: center; text-shadow: 0 0 30px rgba(255, 255, 255, 0.8);
+      pointer-events: none; z-index: 1000;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      word-break: keep-all; width: 90%;
+    }
+
+    .highlight-overlay.show { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div id="background-echo"></div>
+<div id="highlightBox" class="highlight-overlay"></div>
+
+<div class="ui-layer">
+  <h1>메시지 보드</h1>
+  <div class="write-box">
+    <input id="messageInput" type="text" placeholder="메시지를 입력하세요" maxlength="300" />
+    <button id="sendButton">전송</button>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://kmfqxpdiclakvoqlwavh.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_2ktHdDZ9xgYjvVCmHFnW7g_Zn56ApXG";
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const backgroundEchoEl = document.getElementById("background-echo");
+  const inputEl = document.getElementById("messageInput");
+  const sendButton = document.getElementById("sendButton");
+  const highlightBox = document.getElementById("highlightBox");
+
+  let highlightTimeout;
+  let lastTimestamp = new Date().toISOString(); // 마지막으로 확인한 시간 저장
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.innerText = text;
+    return div.innerHTML;
+  }
+
+  function createEchoMessage(content, isNew = false) {
+    const div = document.createElement("div");
+    div.className = "echo-message";
+    div.innerHTML = escapeHtml(content);
+
+    const size = isNew ? (Math.random() * 0.5 + 1.5) : (Math.random() * 1.2 + 0.8);
+    const leftPos = Math.random() * 80 + 10;
+    const duration = isNew ? 8 : (Math.random() * 10 + 15);
+    const maxOpacity = isNew ? 0.9 : (Math.random() * 0.4 + 0.2);
+    const startY = isNew ? (Math.random() * 40 + 30) + "vh" : "110vh";
+
+    div.style.fontSize = `${size}rem`;
+    div.style.left = `${leftPos}%`;
+    div.style.animationDuration = `${duration}s`;
+    div.style.setProperty('--max-opacity', maxOpacity);
+    div.style.setProperty('--start-y', startY);
+
+    if (!isNew) {
+      div.style.animationIterationCount = "infinite";
+      div.style.animationDelay = `-${Math.random() * duration}s`;
+    } else {
+      div.style.animationIterationCount = "1";
+      div.addEventListener('animationend', () => div.remove());
+    }
+
+    backgroundEchoEl.appendChild(div);
+  }
+
+  function showHighlight(text) {
+    highlightBox.innerHTML = escapeHtml(text);
+    highlightBox.classList.add("show");
+    clearTimeout(highlightTimeout);
+    highlightTimeout = setTimeout(() => highlightBox.classList.remove("show"), 2500);
+  }
+
+  // 처음 접속 시 기존 메시지 로드
+  async function loadInitialMessages() {
+    const { data } = await client.from("messages").select("*").order("created_at", { ascending: false }).limit(40);
+    if (data && data.length > 0) {
+      data.forEach(msg => createEchoMessage(msg.content, false));
+      lastTimestamp = data[0].created_at; // 가장 최신 메시지 시간으로 업데이트
+    }
+  }
+
+  // 2초마다 실행될 백그라운드 "부분 새로고침" 함수
+  async function checkForNewMessages() {
+    const { data, error } = await client
+      .from("messages")
+      .select("*")
+      .gt("created_at", lastTimestamp) // 마지막 확인 시간보다 더 최근 것만 가져옴
+      .order("created_at", { ascending: true });
+
+    if (data && data.length > 0) {
+      data.forEach(msg => {
+        showHighlight(msg.content);
+        createEchoMessage(msg.content, true);
+        lastTimestamp = msg.created_at; // 시간 갱신
+      });
+    }
+  }
+
+  async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = "";
+    inputEl.focus();
+    
+    // 내가 보낸 건 즉시 표시 (서버에서 다시 가져올 때 중복되지 않게 시간 갱신을 위해 insert 결과 기다림)
+    const { data, error } = await client.from("messages").insert({ content: text }).select();
+    if (data) {
+        // 내가 보낸 메시지의 시간으로 갱신하여 Polling에서 중복 방지
+        lastTimestamp = data[0].created_at;
+        showHighlight(text);
+        createEchoMessage(text, true);
+    }
+  }
+
+  sendButton.addEventListener("click", sendMessage);
+  inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+
+  // 실행 순서
+  loadInitialMessages(); // 1. 초기 로딩
+  setInterval(checkForNewMessages, 2000); // 2. 2초마다 사용자 모르게 부분 새고 수행
+
+</script>
+</body>
+</html>
