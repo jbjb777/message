@@ -3,210 +3,254 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>실시간 메시지 보드</title>
+  <title>실시간 3D 하트 보드 - 접속자 표시</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
 
   <style>
     * { box-sizing: border-box; }
     body {
-      margin: 0;
-      background: #050505;
-      color: white;
-      font-family: sans-serif;
-      height: 100vh;
-      overflow: hidden;
-      position: relative;
+      margin: 0; background: #000; color: white;
+      font-family: 'Pretendard', sans-serif;
+      height: 100vh; overflow: hidden; position: relative;
     }
 
-    #background-echo {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      z-index: 1;
-      pointer-events: none;
-    }
+    #space-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+    #background-echo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 
     @keyframes floatUp {
       0% { transform: translateY(var(--start-y)); opacity: 0; }
-      15% { opacity: var(--max-opacity); }
-      85% { opacity: var(--max-opacity); }
+      10% { opacity: var(--max-opacity); }
+      90% { opacity: var(--max-opacity); }
       100% { transform: translateY(-20vh); opacity: 0; }
     }
 
-    .echo-message {
-      position: absolute;
-      color: white;
-      white-space: nowrap;
-      /* 모든 메시지는 기본적으로 무한 반복 */
-      animation: floatUp linear infinite;
+    @keyframes clickPop {
+      0% { transform: scale(1); }
+      30% { transform: scale(1.35); filter: brightness(1.5); }
+      100% { transform: scale(1); }
     }
+
+    @keyframes heartUp {
+      0% { transform: translate(0, 0) scale(0.5); opacity: 1; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(1.2); opacity: 0; }
+    }
+
+    .echo-message {
+      position: absolute; color: #ffffff; white-space: nowrap;
+      font-weight: 600; cursor: pointer; pointer-events: auto;
+      display: flex; align-items: baseline; gap: 8px;
+      user-select: none;
+      animation: floatUp var(--float-duration) linear infinite;
+      padding: 15px 25px; /* 클릭 감지 범위 넉넉하게 수정 */
+      margin: -15px -25px;
+    }
+
+    .content-body {
+      display: inline-block;
+      text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+    }
+
+    .echo-message.clicked .content-body { animation: clickPop 0.4s ease-out; }
+
+    .heart { position: absolute; pointer-events: none; z-index: 2; font-size: 1.5rem; animation: heartUp 1s ease-out forwards; }
+    .time-tag { font-size: 0.6em; opacity: 0.5; font-weight: 400; color: #aaa; }
 
     .ui-layer {
-      position: absolute;
-      bottom: 40px; left: 50%;
-      transform: translateX(-50%);
-      width: 100%; max-width: 700px;
-      z-index: 10;
-      padding: 0 20px;
-      display: flex; flex-direction: column; gap: 10px;
+      position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+      width: 100%; max-width: 700px; z-index: 10; padding: 0 20px;
+      display: flex; flex-direction: column; gap: 15px;
     }
 
-    h1 { text-align: center; margin: 0 0 10px 0; font-size: 24px; opacity: 0.8; }
+    /* 접속자 수 표시 스타일 */
+    #onlineCount {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #00ff88; /* 접속자 표시는 밝은 녹색으로 강조 */
+      font-weight: bold;
+    }
 
     .write-box {
-      display: flex; gap: 10px;
-      background: rgba(20, 20, 20, 0.7);
-      padding: 10px; border-radius: 20px;
-      backdrop-filter: blur(5px);
+      display: flex; gap: 10px; background: rgba(0, 0, 0, 0.7);
+      padding: 10px; border-radius: 20px; backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
-    .write-box input {
-      flex: 1; border: none; outline: none; background: transparent;
-      color: white; padding: 16px; font-size: 16px;
-    }
-
-    .write-box button {
-      border: none; background: white; color: black;
-      padding: 16px 24px; border-radius: 14px;
-      cursor: pointer; font-size: 16px; font-weight: bold;
-    }
-
-    .highlight-overlay {
-      position: fixed; top: 50%; left: 50%;
-      transform: translate(-50%, -50%) scale(0.8);
-      opacity: 0; font-size: 48px; font-weight: bold; color: white;
-      text-align: center; text-shadow: 0 0 30px rgba(255, 255, 255, 0.8);
-      pointer-events: none; z-index: 1000;
-      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-      word-break: keep-all; width: 90%;
-    }
-
-    .highlight-overlay.show { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+    .write-box input { flex: 1; border: none; outline: none; background: transparent; color: white; padding: 16px; font-size: 16px; }
+    .write-box button { border: none; background: white; color: black; padding: 16px 24px; border-radius: 14px; cursor: pointer; font-size: 16px; font-weight: bold; }
   </style>
 </head>
 <body>
 
+<canvas id="space-bg"></canvas>
 <div id="background-echo"></div>
-<div id="highlightBox" class="highlight-overlay"></div>
 
 <div class="ui-layer">
-  <h1>메시지 보드</h1>
+  <div id="onlineCount">접속자 확인 중...</div>
   <div class="write-box">
-    <input id="messageInput" type="text" placeholder="메시지를 입력하세요" maxlength="300" />
+    <input id="messageInput" type="text" placeholder="메시지를 입력하고 다른 사람의 글을 클릭해봐요!" maxlength="300" />
     <button id="sendButton">전송</button>
   </div>
 </div>
 
 <script>
+  /* --- 1. Three.js 배경 --- */
+  const canvas = document.getElementById("space-bg");
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.position.z = 5;
+  const starsGeometry = new THREE.BufferGeometry();
+  const posArr = [];
+  for (let i = 0; i < 2500; i++) posArr.push((Math.random()-0.5)*65, (Math.random()-0.5)*65, (Math.random()-0.5)*65);
+  starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+  const stars = new THREE.Points(starsGeometry, new THREE.PointsMaterial({ color: 0xffffff, size: 0.06, transparent: true, opacity: 0.5 }));
+  scene.add(stars);
+  let mouseX = 0, mouseY = 0;
+  document.addEventListener("mousemove", (e) => { mouseX = (e.clientX/window.innerWidth-0.5)*2; mouseY = (e.clientY/window.innerHeight-0.5)*2; });
+  function animate() { requestAnimationFrame(animate); camera.position.x += (mouseX*3.5-camera.position.x)*0.05; camera.position.y += (-mouseY*3.5-camera.position.y)*0.05; stars.rotation.y += 0.0002; camera.lookAt(scene.position); renderer.render(scene, camera); }
+  animate();
+
+  /* --- 2. Supabase 설정 및 변수 --- */
   const SUPABASE_URL = "https://kmfqxpdiclakvoqlwavh.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_2ktHdDZ9xgYjvVCmHFnW7g_Zn56ApXG";
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  const CLIENT_ID = crypto.randomUUID(); // 현재 접속 세션의 고유 ID
   const backgroundEchoEl = document.getElementById("background-echo");
+  const onlineCountEl = document.getElementById("onlineCount");
   const inputEl = document.getElementById("messageInput");
   const sendButton = document.getElementById("sendButton");
-  const highlightBox = document.getElementById("highlightBox");
 
-  let highlightTimeout;
-  let lastTimestamp = new Date().toISOString(); 
+  let lastMessageTimestamp = new Date().toISOString(); 
+  let lastClickId = 0; 
 
-  function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.innerText = text;
-    return div.innerHTML;
+  /* --- 3. 접속자 관리 (Presence) 로직 --- */
+
+  // 내 상태 업데이트 (5초마다 실행)
+  async function updatePresence() {
+    const { data } = await client.from("online_users").select("*").eq("client_id", CLIENT_ID);
+    if (data && data.length > 0) {
+      await client.from("online_users").update({ last_seen: new Date().toISOString() }).eq("client_id", CLIENT_ID);
+    } else {
+      await client.from("online_users").insert({ client_id: CLIENT_ID });
+    }
   }
 
-  /**
-   * 메시지 생성 함수
-   * isNew: true면 화면 중앙에서 즉시 등장, false면 화면 밖(아래)에서 등장
-   */
-  function createEchoMessage(content, isNew = false) {
+  // 실시간 접속자 수 계산 (3초마다 실행)
+  async function updateOnlineCount() {
+    const fifteenSecondsAgo = new Date(Date.now() - 15000).toISOString();
+    const { data, count } = await client
+      .from("online_users")
+      .select("*", { count: "exact", head: false })
+      .gt("last_seen", fifteenSecondsAgo);
+    
+    const activeCount = data ? data.length : 0;
+    onlineCountEl.innerText = `● 실시간 접속 ${activeCount}명`;
+  }
+
+  /* --- 4. 메시지 및 효과 로직 --- */
+
+  function createHeartEffect(el) {
+    const rect = el.getBoundingClientRect();
+    for (let i = 0; i < 6; i++) {
+      const heart = document.createElement('div');
+      heart.className = 'heart';
+      heart.innerHTML = '❤️';
+      heart.style.setProperty('--tx', `${(Math.random() - 0.5) * 120}px`);
+      heart.style.setProperty('--ty', `${-(Math.random() * 120 + 60)}px`);
+      heart.style.left = `${rect.left + rect.width/2}px`;
+      heart.style.top = `${rect.top}px`;
+      heart.style.position = 'fixed';
+      document.body.appendChild(heart);
+      setTimeout(() => heart.remove(), 1000);
+    }
+  }
+
+  function applyClickPopEffect(messageId) {
+    const targets = document.querySelectorAll(`.echo-message[data-id="${messageId}"]`);
+    targets.forEach(el => {
+      el.classList.remove("clicked");
+      void el.offsetWidth;
+      el.classList.add("clicked");
+      createHeartEffect(el);
+      setTimeout(() => el.classList.remove("clicked"), 500);
+    });
+  }
+
+  function createEchoMessage(content, createdAt, id, isNew = false) {
     const div = document.createElement("div");
     div.className = "echo-message";
-    div.innerHTML = escapeHtml(content);
+    div.dataset.id = id;
+    const timeText = (new Date() - new Date(createdAt) < 60000) ? "방금 전" : `${Math.floor((new Date() - new Date(createdAt))/60000)}분 전`;
+    div.innerHTML = `<span class="content-body">${escapeHtml(content)}</span><span class="time-tag">${timeText}</span>`;
 
-    const size = Math.random() * 1.2 + 0.8;
-    const leftPos = Math.random() * 80 + 10;
-    const duration = Math.random() * 10 + 15; // 15~25초 사이
-    const maxOpacity = Math.random() * 0.4 + 0.15;
-    
-    // 신규 메시지는 화면 중앙 근처에서 즉시 시작, 기존은 화면 아래(110vh)
-    const startY = isNew ? (Math.random() * 40 + 30) + "vh" : "110vh";
+    div.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      applyClickPopEffect(id); 
+      await client.from("message_clicks").insert({ message_id: id });
+    });
 
+    const size = isNew ? (Math.random() * 1.0 + 2.5) : (Math.random() * 0.5 + 1.1);
+    const duration = Math.random() * 10 + 20; 
     div.style.fontSize = `${size}rem`;
-    div.style.left = `${leftPos}%`;
-    div.style.animationDuration = `${duration}s`;
-    div.style.setProperty('--max-opacity', maxOpacity);
-    div.style.setProperty('--start-y', startY);
-
-    // 신규 메시지라도 첫 비행 이후에는 계속 반복되도록 설정
-    if (!isNew) {
-      // 기존 메시지들은 시작 지점을 랜덤하게 꼬아서 겹치지 않게 함
-      div.style.animationDelay = `-${Math.random() * duration}s`;
-    }
-
+    div.style.left = `${Math.random() * 75 + 12.5}%`;
+    div.style.setProperty('--float-duration', `${duration}s`);
+    div.style.setProperty('--max-opacity', isNew ? 1.0 : (Math.random() * 0.2 + 0.6));
+    div.style.setProperty('--start-y', isNew ? (Math.random() * 50 + 25) + "vh" : "110vh");
+    if (!isNew) div.style.animationDelay = `-${Math.random() * duration}s`;
     backgroundEchoEl.appendChild(div);
   }
 
-  function showHighlight(text) {
-    highlightBox.innerHTML = escapeHtml(text);
-    highlightBox.classList.add("show");
-    clearTimeout(highlightTimeout);
-    highlightTimeout = setTimeout(() => highlightBox.classList.remove("show"), 2500);
+  function escapeHtml(text) { const d = document.createElement('div'); d.innerText = text; return d.innerHTML; }
+
+  /* --- 5. 폴링 및 초기화 --- */
+
+  async function checkForUpdates() {
+    // 메시지 체크
+    const { data: msgs } = await client.from("messages").select("*").gt("created_at", lastMessageTimestamp).order("created_at", { ascending: true });
+    if (msgs) msgs.forEach(m => { createEchoMessage(m.content, m.created_at, m.id, true); lastMessageTimestamp = m.created_at; });
+    
+    // 클릭 체크
+    const { data: clicks } = await client.from("message_clicks").select("*").gt("id", lastClickId).order("id", { ascending: true });
+    if (clicks) clicks.forEach(c => { applyClickPopEffect(c.message_id); lastClickId = c.id; });
   }
 
-  // 처음 접속 시 메시지들 로드
-  async function loadInitialMessages() {
-    const { data } = await client.from("messages").select("*").order("created_at", { ascending: false }).limit(50);
-    if (data && data.length > 0) {
-      backgroundEchoEl.innerHTML = "";
-      data.forEach(msg => createEchoMessage(msg.content, false));
-      lastTimestamp = data[0].created_at; 
+  async function init() {
+    const { data: msgs } = await client.from("messages").select("*").order("created_at", { ascending: false }).limit(40);
+    if (msgs) {
+      msgs.forEach(m => createEchoMessage(m.content, m.created_at, m.id, false));
+      if(msgs.length > 0) lastMessageTimestamp = msgs[0].created_at;
     }
-  }
+    const { data: clicks } = await client.from("message_clicks").select("id").order("id", { ascending: false }).limit(1);
+    if (clicks && clicks.length > 0) lastClickId = clicks[0].id;
 
-  // 사용자 모르게 주기적으로 호출되는 부분 업데이트 함수
-  async function checkForNewMessages() {
-    const { data } = await client
-      .from("messages")
-      .select("*")
-      .gt("created_at", lastTimestamp)
-      .order("created_at", { ascending: true });
-
-    if (data && data.length > 0) {
-      data.forEach(msg => {
-        showHighlight(msg.content);
-        // 새 메시지를 'isNew = true'로 생성하여 배경 흐름에 합류시킴
-        createEchoMessage(msg.content, true);
-        lastTimestamp = msg.created_at; 
-      });
-    }
+    updatePresence();
+    updateOnlineCount();
   }
 
   async function sendMessage() {
     const text = inputEl.value.trim();
     if (!text) return;
-    
     inputEl.value = "";
-    inputEl.focus();
-    
     const { data } = await client.from("messages").insert({ content: text }).select();
-    if (data) {
-        lastTimestamp = data[0].created_at;
-        showHighlight(text);
-        createEchoMessage(text, true);
-    }
+    if (data) { lastMessageTimestamp = data[0].created_at; createEchoMessage(text, data[0].created_at, data[0].id, true); }
   }
 
   sendButton.addEventListener("click", sendMessage);
   inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
 
-  // 1. 초기 로딩
-  loadInitialMessages(); 
-  
-  // 2. 2초마다 사용자 모르게 새 데이터 체크 (Polling)
-  setInterval(checkForNewMessages, 2000); 
-
+  init();
+  setInterval(updatePresence, 5000);   // 내 생존 신호 전송
+  setInterval(updateOnlineCount, 3000); // 접속자 수 갱신
+  setInterval(checkForUpdates, 1000);   // 메시지/클릭 갱신
 </script>
 </body>
 </html>
