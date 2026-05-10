@@ -158,6 +158,24 @@
 
   /* --- 4. 메시지 및 효과 로직 --- */
 
+  function formatTime(createdAt) {
+    const now = new Date();
+    const past = new Date(createdAt);
+    const diffInMs = now - past;
+    const diffInSec = Math.floor(diffInMs / 1000);
+    const diffInMin = Math.floor(diffInSec / 60);
+    const diffInHrs = Math.floor(diffInMin / 60);
+    const diffInDays = Math.floor(diffInHrs / 24);
+
+    if (diffInSec < 60) return "방금 전";
+    if (diffInMin < 60) return `${diffInMin}분 전`;
+    if (diffInHrs < 24) return `${diffInHrs}시간 전`;
+    if (diffInDays < 7) return `${diffInDays}일 전`;
+    
+    // 7일 이상인 경우 날짜 표시 (YYYY.MM.DD)
+    return `${past.getFullYear()}.${String(past.getMonth() + 1).padStart(2, '0')}.${String(past.getDate()).padStart(2, '0')}`;
+  }
+
   function createHeartEffect(el) {
     const rect = el.getBoundingClientRect();
     for (let i = 0; i < 6; i++) {
@@ -189,7 +207,8 @@
     const div = document.createElement("div");
     div.className = "echo-message";
     div.dataset.id = id;
-    const timeText = (new Date() - new Date(createdAt) < 60000) ? "방금 전" : `${Math.floor((new Date() - new Date(createdAt))/60000)}분 전`;
+    
+    const timeText = formatTime(createdAt);
     div.innerHTML = `<span class="content-body">${escapeHtml(content)}</span><span class="time-tag">${timeText}</span>`;
 
     div.addEventListener("click", async (e) => {
